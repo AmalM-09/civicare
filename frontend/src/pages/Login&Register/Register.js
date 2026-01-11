@@ -74,6 +74,8 @@ const RegisterScreen = ({ navigation }) => {
       error.response?.data?.message || "Registration failed"
     );
   }
+  console.log(userData);
+  
 };
 
 
