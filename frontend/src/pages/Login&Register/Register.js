@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { BASE_URL } from "../../../config";
 import {
   View,
   Text,
@@ -6,9 +7,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  ScrollView 
 } from "react-native";
 import * as Location from "expo-location";
 import axios from "axios";
+
+const API_URL = `${BASE_URL}/register`; 
 
 const RegisterScreen = ({ navigation }) => {
   const [name, setName] = useState("");
@@ -19,69 +23,59 @@ const RegisterScreen = ({ navigation }) => {
 
   useEffect(() => {
     (async () => {
-      const { status } =
-        await Location.requestForegroundPermissionsAsync();
-
+      let { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Permission Denied", "Location required");
+        Alert.alert("Permission Denied", "Location is required to register.");
         return;
       }
 
-      const currentLocation =
-        await Location.getCurrentPositionAsync({});
+      let currentLocation = await Location.getCurrentPositionAsync({});
       setLocation(currentLocation.coords);
     })();
   }, []);
 
- const handleRegister = async () => {
-  if (!name || !phone || !aadhaar || !password) {
-    Alert.alert("Error", "Fill all fields");
-    return;
-  }
+  const handleRegister = async () => {
+    // Validation
+    if (!name || !phone || !aadhaar || !password) {
+      return Alert.alert("Missing Fields", "Please fill in all details.");
+    }
+    if (phone.length !== 10) {
+      return Alert.alert("Invalid Phone", "Phone number must be 10 digits.");
+    }
 
-  if (phone.length !== 10) {
-    Alert.alert("Error", "Phone must be 10 digits");
-    return;
-  }
+    const userData = {
+      name: name,
+      mobile: phone,
+      aadhaar: aadhaar,
+      password: password,
+      location: {
+        latitude: location?.latitude || 0,
+        longitude: location?.longitude || 0,
+      },
+    };
 
-  if (aadhaar.length !== 12) {
-    Alert.alert("Error", "Aadhaar must be 12 digits");
-    return;
-  }
+    try {
+      console.log("Sending Data:", userData); 
 
-  const userData = {
-    name,
-    mobile: phone, 
-    aadhaar,
-    password,
-    location: {
-      latitude: location?.latitude,
-      longitude: location?.longitude,
-    },
+      const res = await axios.post(API_URL, userData);
+      
+      console.log("Server Response:", res.data); 
+
+      if (res.data.status === "ok") {
+        Alert.alert("Success", "Account created successfully!");
+        navigation.navigate("Login");
+      } else {
+        Alert.alert("Registration Failed", res.data.data);
+      }
+    } catch (error) {
+      console.log("Network Error:", error);
+      Alert.alert("Error", "Could not connect to server. Check IP Address.");
+    }
   };
 
-  try {
-    const res = await axios.post(
-      "http://10.100.173.99:8001/register",
-      userData
-    );
-
-    Alert.alert("Success", res.data.message || "Account created");
-    navigation.navigate("Login");
-  } catch (error) {
-    Alert.alert(
-      "Error",
-      error.response?.data?.message || "Registration failed"
-    );
-  }
-  console.log(userData);
-  
-};
-
-
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Register</Text>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.title}>Create Account</Text>
 
       <TextInput
         style={styles.input}
@@ -117,22 +111,17 @@ const RegisterScreen = ({ navigation }) => {
       />
 
       <Text style={styles.locationText}>
-        {location ? "📍 Location Captured" : "📍 Fetching Location..."}
+        {location ? "✅ Location Captured" : "📍 Fetching Location..."}
       </Text>
 
-      <TouchableOpacity
-        style={styles.button}
-        onPress={handleRegister}
-      >
+      <TouchableOpacity style={styles.button} onPress={handleRegister}>
         <Text style={styles.buttonText}>Register</Text>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => navigation.navigate("Login")}>
-        <Text style={styles.linkText}>
-          Already have an account? Login
-        </Text>
+        <Text style={styles.linkText}>Already have an account? Login</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 };
 
@@ -140,35 +129,39 @@ export default RegisterScreen;
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: "center",
     padding: 20,
     backgroundColor: "#f2f2f2",
   },
   title: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: "bold",
     textAlign: "center",
-    marginBottom: 25,
+    marginBottom: 30,
+    color: "#333",
   },
   input: {
     backgroundColor: "#fff",
     padding: 15,
-    borderRadius: 8,
+    borderRadius: 10,
     marginBottom: 15,
     fontSize: 16,
+    elevation: 2, 
   },
   locationText: {
     textAlign: "center",
-    marginBottom: 15,
+    marginBottom: 20,
     color: "#555",
+    fontWeight: "500"
   },
   button: {
-    backgroundColor: "#28a745",
+    backgroundColor: "#8e44ad", 
     padding: 15,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: "center",
     marginBottom: 15,
+    elevation: 3,
   },
   buttonText: {
     color: "#fff",
@@ -177,7 +170,8 @@ const styles = StyleSheet.create({
   },
   linkText: {
     textAlign: "center",
-    color: "#007BFF",
+    color: "#8e44ad",
     fontSize: 16,
+    marginTop: 10
   },
 });

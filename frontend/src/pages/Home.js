@@ -1,15 +1,22 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
+import { BASE_URL } from '../../config';
 import { 
   View, 
   Text, 
   StyleSheet, 
   TouchableOpacity, 
   StatusBar,
-  ScrollView
+  ScrollView,
+  ActivityIndicator,
+  RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import axios from 'axios';
+import Profile from './ProfileScreen';
 
+const API_URL = `${BASE_URL}/get-issues`; 
 
 const COLORS = {
   primary: '#8e44ad',   
@@ -18,7 +25,6 @@ const COLORS = {
   textDark: '#4a235a',   
   textLight: '#888',
   white: '#ffffff',
-
   successBg: '#e8f5e9',
   successText: '#27ae60',
   warningBg: '#fff3e0',
@@ -27,18 +33,49 @@ const COLORS = {
   dangerText: '#c0392b'
 };
 
-const MOCK_ISSUES = [
-  { id: '1', category: 'Pothole', location: 'Main Street, near Bank', status: 'Pending', date: 'Today' },
-  { id: '2', category: 'Street Light', location: '4th Avenue Park', status: 'Processing', date: 'Yesterday' },
-  { id: '3', category: 'Garbage Dump', location: 'Market Road', status: 'Solved', date: 'Oct 24' },
-  { id: '4', category: 'Water Leakage', location: 'Sector 5', status: 'Solved', date: 'Oct 20' },
-  { id: '5', category: 'Broken Bench', location: 'City Center', status: 'Pending', date: 'Today' },
-];
-
 export default function Home({ navigation }) {
+  const [issues, setIssues] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const activeIssues = MOCK_ISSUES.filter(item => item.status !== 'Solved');
-  const solvedIssues = MOCK_ISSUES.filter(item => item.status === 'Solved');
+  // --- FETCH DATA FROM DB ---
+  const fetchIssues = async () => {
+    try {
+      const response = await axios.get(API_URL);
+      if (response.data.status === "ok") {
+        setIssues(response.data.data);
+      }
+    } catch (error) {
+      console.log("Error fetching issues:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Auto-refresh when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchIssues();
+    }, [])
+  );
+
+  // Manual Pull-to-Refresh
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchIssues();
+  };
+
+  // --- FILTER DATA ---
+  const activeIssues = issues.filter(item => item.status !== 'Solved');
+  const solvedIssues = issues.filter(item => item.status === 'Solved');
+
+  // --- HELPERS ---
+  const formatDate = (isoDate) => {
+    if (!isoDate) return "Just now";
+    const date = new Date(isoDate);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -57,14 +94,21 @@ export default function Home({ navigation }) {
   };
 
   const IssueCard = ({ item }) => (
-    <View style={styles.card}>
+    <TouchableOpacity 
+      style={styles.card} 
+      activeOpacity={0.8} 
+      onPress={() => navigation.navigate('IssueDetail', { issue: item })}
+    >
       <View style={styles.cardRow}>
         <View style={{ flex: 1 }}>
           <Text style={styles.categoryTitle}>{item.category}</Text>
           
           <View style={styles.locationContainer}>
             <Ionicons name="location-sharp" size={14} color={COLORS.primary} />
-            <Text style={styles.locationText}>{item.location}</Text>
+            {/* DB sends 'locationName', not 'location' */}
+            <Text style={styles.locationText} numberOfLines={1}>
+                {item.locationName || "Location not available"}
+            </Text>
           </View>
         </View>
         
@@ -74,8 +118,8 @@ export default function Home({ navigation }) {
           </Text>
         </View>
       </View>
-      <Text style={styles.dateText}>Reported: {item.date}</Text>
-    </View>
+      <Text style={styles.dateText}>Reported: {formatDate(item.date)}</Text>
+    </TouchableOpacity>
   );
 
   return (
@@ -88,43 +132,58 @@ export default function Home({ navigation }) {
           <Text style={styles.greeting}>Welcome back, Citizen</Text>
         </View>
         
-        <TouchableOpacity style={styles.profileIcon}>
+        <TouchableOpacity style={styles.profileIcon} onPress={() => navigation.navigate('Profile')}>
            <Ionicons name="person-circle-outline" size={40} color={COLORS.primary} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        <View style={styles.sectionHeader}>
-          <View style={styles.headerTitleRow}>
-            <Ionicons name="time-outline" size={20} color={COLORS.primary} style={{ marginRight: 6 }} />
-            <Text style={styles.sectionTitle}>In Progress</Text>
-          </View>
-          <Text style={styles.sectionCount}>{activeIssues.length} active</Text>
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={{marginTop: 10, color: COLORS.textLight}}>Loading Issues...</Text>
         </View>
+      ) : (
+        <ScrollView 
+            contentContainerStyle={styles.scrollContent} 
+            showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />}
+        >
+            
+            {/* Active Section */}
+            <View style={styles.sectionHeader}>
+            <View style={styles.headerTitleRow}>
+                <Ionicons name="time-outline" size={20} color={COLORS.primary} style={{ marginRight: 6 }} />
+                <Text style={styles.sectionTitle}>In Progress</Text>
+            </View>
+            <Text style={styles.sectionCount}>{activeIssues.length} active</Text>
+            </View>
 
-        {activeIssues.map((item) => (
-          <IssueCard key={item.id} item={item} />
-        ))}
+            {activeIssues.length === 0 ? (
+                <Text style={styles.emptyText}>No active issues found.</Text>
+            ) : (
+                activeIssues.map((item) => <IssueCard key={item._id} item={item} />)
+            )}
 
-        <View style={[styles.sectionHeader, { marginTop: 25 }]}>
-          <View style={styles.headerTitleRow}>
-             <Ionicons name="checkmark-done-circle-outline" size={20} color={COLORS.successText} style={{ marginRight: 6 }} />
-             <Text style={styles.sectionTitle}>Past Resolutions</Text>
-          </View>
-          <Text style={styles.sectionCount}>{solvedIssues.length} solved</Text>
-        </View>
+            {/* Solved Section */}
+            <View style={[styles.sectionHeader, { marginTop: 25 }]}>
+            <View style={styles.headerTitleRow}>
+                <Ionicons name="checkmark-done-circle-outline" size={20} color={COLORS.successText} style={{ marginRight: 6 }} />
+                <Text style={styles.sectionTitle}>Past Resolutions</Text>
+            </View>
+            <Text style={styles.sectionCount}>{solvedIssues.length} solved</Text>
+            </View>
 
-        {solvedIssues.map((item) => (
-          <IssueCard key={item.id} item={item} />
-        ))}
+            {solvedIssues.map((item) => (
+               <IssueCard key={item._id} item={item} />
+            ))}
 
-      </ScrollView>
+        </ScrollView>
+      )}
 
-     
+      
       <TouchableOpacity 
         style={styles.fab} 
-        onPress={() => console.log("Go to Report Page")}
+        onPress={() => navigation.navigate("Report")}
       >
         <Ionicons name="add" size={32} color={COLORS.white} />
       </TouchableOpacity>
@@ -213,6 +272,7 @@ const styles = StyleSheet.create({
   locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    maxWidth: '85%' // Prevent long addresses breaking layout
   },
   locationText: {
     fontSize: 13,
@@ -234,6 +294,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
+  emptyText: {
+    color: COLORS.textLight,
+    fontStyle: 'italic',
+    marginTop: 10,
+    marginBottom: 20,
+  },
   fab: {
     position: 'absolute',
     bottom: 30,
@@ -251,3 +317,12 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
 });
+
+
+
+
+
+
+
+
+
