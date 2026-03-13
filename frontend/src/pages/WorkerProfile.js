@@ -9,7 +9,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { BASE_URL } from '../../config';
 
-// Synced Theme Colors
 const COLORS = {
   primary: '#8e44ad',
   background: '#f8f4fc',
@@ -20,7 +19,7 @@ const COLORS = {
   success: '#27ae60',
   warning: '#f39c12',
   danger: '#e74c3c',
-  border: '#fce4ec' // Light Pink
+  border: '#fce4ec' 
 };
 
 export default function WorkerProfile({ navigation }) {
@@ -51,8 +50,6 @@ export default function WorkerProfile({ navigation }) {
   };
 
   useFocusEffect(useCallback(() => { fetchProfileData(); }, []));
-
-  // Handle Status Change
   const handleStatusChange = async (newStatus) => {
     if (worker.status === newStatus) return; // Prevent unnecessary API calls
 

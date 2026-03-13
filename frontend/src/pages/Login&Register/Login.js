@@ -46,17 +46,14 @@ const LoginScreen = ({ navigation }) => {
           Alert.alert("Login Successful", `Welcome back, Worker ${userData.name}!`);
           navigation.replace("WorkerHome");
         } 
-        // // else if (userRole === "Admin" || userRole === "admin") {
-        // //   Alert.alert("Admin Access", `Welcome to Admin Dashboard.`);
-        //   
-        // } 
+      
         else {
           Alert.alert("Login Successful", `Welcome back, ${userData.name}!`);
           navigation.replace("Home"); // Citizen Home
         }
       } 
       else {
-        // Handle invalid credentials
+  
         navigation.replace("AdminHome");
       }
     } catch (error) {
