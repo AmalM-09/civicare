@@ -42,10 +42,10 @@ export default function AdminHomeScreen({ navigation }) {
   // --- CUSTOM ALERT STATE ---
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertIssue, setAlertIssue] = useState(null);
-  const soundRef = useRef(null); // Keep track of sound so we can stop it
+  const soundRef = useRef(null); 
   const latestIssueIdRef = useRef(null);
 
-  // --- CLEANUP (If admin leaves screen while it's ringing) ---
+  // --- CLEANUP ---
   useEffect(() => {
     return () => {
       stopAlert(); 
@@ -57,13 +57,10 @@ export default function AdminHomeScreen({ navigation }) {
     setAlertIssue(issue);
     setAlertVisible(true);
 
-    // 1. Looping Vibration (Wait 0ms, Vibrate 500ms, Pause 500ms -> Repeat)
     Vibration.vibrate([0, 500, 500], true); 
 
-    // 2. Looping Sound
     try {
       const { sound } = await Audio.Sound.createAsync(
-        // Clean, simple electronic beep (Standard Alert)
         { uri: 'https://actions.google.com/sounds/v1/alarms/beep_short.ogg' }, 
         { shouldPlay: true, isLooping: true } 
       );
@@ -75,7 +72,7 @@ export default function AdminHomeScreen({ navigation }) {
 
   // --- STOP SOUND, VIBRATION & HIDE POPUP ---
   const stopAlert = async () => {
-    Vibration.cancel(); // Stops the vibration
+    Vibration.cancel(); 
 
     if (soundRef.current) {
       await soundRef.current.stopAsync();
@@ -87,15 +84,14 @@ export default function AdminHomeScreen({ navigation }) {
     setAlertIssue(null);
   };
 
-  // --- HANDLE MODAL ACTIONS ---
   const handleDismissAlert = () => {
     stopAlert();
   };
 
   const handleViewAlertDetails = () => {
     const issueToView = alertIssue;
-    stopAlert(); // Turn off sirens
-    navigation.navigate('AdminIssueDetail', { issue: issueToView }); // Go to page
+    stopAlert(); 
+    navigation.navigate('AdminIssueDetail', { issue: issueToView }); 
   };
 
   // --- SILENT BACKGROUND POLLING ---
@@ -119,10 +115,9 @@ export default function AdminHomeScreen({ navigation }) {
             latestIssueIdRef.current = newestIssue._id; 
             setIssues(fetchedIssues); 
 
-            // Trigger if High Priority
-            const isHighPriority = newestIssue.category.includes('Water') || newestIssue.category.includes('Pothole');
+            // ✨ NEW LOGIC: Trigger alert ONLY if Gemini assigned it "High" priority! ✨
+            const isHighPriority = newestIssue.priority === 'High';
             
-            // Only trigger if a modal isn't already showing
             if (isHighPriority && !alertVisible) {
               triggerHighPriorityAlert(newestIssue);
             }
@@ -131,7 +126,7 @@ export default function AdminHomeScreen({ navigation }) {
       } catch (error) {
         console.log("Polling error:", error);
       }
-    }, 10000); // Check every 10 seconds
+    }, 10000); 
 
     return () => clearInterval(interval); 
   }, [alertVisible]);
@@ -165,21 +160,26 @@ export default function AdminHomeScreen({ navigation }) {
     fetchIssues();
   };
 
-  const getPriorityWeight = (category) => {
-    if (category.includes('Water') || category.includes('Pothole')) return 3; 
-    if (category.includes('Light') || category.includes('Garbage')) return 2; 
-    return 1; 
+  // ✨ NEW LOGIC: Helper to turn Gemini's text into a math score for sorting ✨
+  const getPriorityScore = (priorityStr) => {
+    if (priorityStr === 'High') return 3;
+    if (priorityStr === 'Medium') return 2;
+    return 1; // Default for 'Low' or missing
   };
 
+  // --- FILTER & SECTION LOGIC ---
   const getSectionedIssues = () => {
     if (activeTab === 'Pending') {
       let pendingList = issues.filter(item => item.status === 'Pending' || !item.status);
       let processingList = issues.filter(item => item.status === 'Processing');
       
       const sortList = (list) => list.sort((a, b) => {
-        const weightA = getPriorityWeight(a.category);
-        const weightB = getPriorityWeight(b.category);
-        if (weightA !== weightB) return weightB - weightA;
+        // Sort by Gemini's Priority first
+        const scoreA = getPriorityScore(a.priority);
+        const scoreB = getPriorityScore(b.priority);
+        if (scoreA !== scoreB) return scoreB - scoreA;
+        
+        // If priority is the same, sort by oldest date
         return new Date(a.date) - new Date(b.date);
       });
 
@@ -210,8 +210,8 @@ export default function AdminHomeScreen({ navigation }) {
   );
 
   const renderIssueCard = ({ item }) => {
-    const priorityWeight = getPriorityWeight(item.category);
     const isPendingTab = activeTab === 'Pending';
+    const currentPriority = item.priority || 'Low'; // Fallback just in case
 
     return (
       <TouchableOpacity 
@@ -221,10 +221,17 @@ export default function AdminHomeScreen({ navigation }) {
       >
         <View style={styles.cardHeader}>
           <Text style={styles.categoryText}>{item.category}</Text>
+          
+          {/* ✨ NEW LOGIC: Badges color-coded based on Gemini's Priority output ✨ */}
           {isPendingTab ? (
-            <View style={[styles.badge, { backgroundColor: item.status === 'Processing' ? COLORS.warning : (priorityWeight === 3 ? COLORS.danger : priorityWeight === 2 ? COLORS.accent : COLORS.primary) }]}>
+            <View style={[styles.badge, { 
+              backgroundColor: item.status === 'Processing' ? COLORS.warning : 
+                              (currentPriority === 'High' ? COLORS.danger : 
+                               currentPriority === 'Medium' ? COLORS.accent : 
+                               COLORS.primary) 
+            }]}>
               <Text style={styles.badgeText}>
-                {item.status === 'Processing' ? 'Processing' : (priorityWeight === 3 ? 'High Priority' : priorityWeight === 2 ? 'Medium' : 'Low')}
+                {item.status === 'Processing' ? 'Processing' : `${currentPriority} Priority`}
               </Text>
             </View>
           ) : (
@@ -258,7 +265,7 @@ export default function AdminHomeScreen({ navigation }) {
         animationType="fade"
         transparent={true}
         visible={alertVisible}
-        onRequestClose={handleDismissAlert} // Handles Android back button
+        onRequestClose={handleDismissAlert} 
       >
         <View style={styles.modalOverlay}>
           <View style={styles.alertBox}>
@@ -268,7 +275,7 @@ export default function AdminHomeScreen({ navigation }) {
             </View>
 
             <Text style={styles.alertTitle}>HIGH PRIORITY ALERT</Text>
-            <Text style={styles.alertSubtitle}>A critical issue requires immediate attention.</Text>
+            <Text style={styles.alertSubtitle}>AI has flagged this issue as critical.</Text>
 
             <View style={styles.alertDetailsBox}>
                <Text style={styles.alertDetailCategory}>{alertIssue?.category}</Text>

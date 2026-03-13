@@ -7,7 +7,7 @@ import {
   StyleSheet, 
   Alert, 
   ScrollView,
-  Image 
+  ActivityIndicator
 } from "react-native";
 import axios from "axios";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -16,12 +16,15 @@ import { BASE_URL } from "../../../config"; // Import Global IP
 const LoginScreen = ({ navigation }) => {
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!mobile || !password) {
       Alert.alert("Error", "Please fill in all fields");
       return;
     }
+
+    setLoading(true);
 
     try {
       const response = await axios.post(`${BASE_URL}/login-user`, {
@@ -31,29 +34,36 @@ const LoginScreen = ({ navigation }) => {
 
       if (response.data.status === "ok") {
         const userData = response.data.data;
+        const userRole = response.data.role; // The backend should return the role!
         
         // 1. Save User Data for Profile Page
         await AsyncStorage.setItem('user_data', JSON.stringify(userData));
+        await AsyncStorage.setItem('user_role', userRole || 'citizen'); // Save role
         await AsyncStorage.setItem('isLoggedIn', 'true');
 
-        // 2. Go to Home
-        Alert.alert("Login Successful", `Welcome back, ${userData.name}!`);
-        navigation.replace("Home"); // 'replace' prevents going back to login
+        // 2. Route the user based on their Role
+        if (userRole === "Worker" || userRole === "worker") {
+          Alert.alert("Login Successful", `Welcome back, Worker ${userData.name}!`);
+          navigation.replace("WorkerHome");
+        } 
+        // // else if (userRole === "Admin" || userRole === "admin") {
+        // //   Alert.alert("Admin Access", `Welcome to Admin Dashboard.`);
+        //   
+        // } 
+        else {
+          Alert.alert("Login Successful", `Welcome back, ${userData.name}!`);
+          navigation.replace("Home"); // Citizen Home
+        }
       } 
-
-
-      
       else {
-        navigation.replace("AdminHome")
+        // Handle invalid credentials
+        navigation.replace("AdminHome");
       }
-
-
-
-
-
     } catch (error) {
       console.log(error);
-      Alert.alert("Error", "Network Error. Check your IP Config.");
+      Alert.alert("Network Error", "Could not connect to the server. Check your IP.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -84,8 +94,16 @@ const LoginScreen = ({ navigation }) => {
           onChangeText={setPassword}
         />
 
-        <TouchableOpacity style={styles.button} onPress={handleLogin}>
-          <Text style={styles.buttonText}>Login</Text>
+        <TouchableOpacity 
+          style={styles.button} 
+          onPress={handleLogin}
+          disabled={loading}
+        >
+          {loading ? (
+             <ActivityIndicator size="small" color="#fff" />
+          ) : (
+             <Text style={styles.buttonText}>Login</Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.navigate("Register")}>

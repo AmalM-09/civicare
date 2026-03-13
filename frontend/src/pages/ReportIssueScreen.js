@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_URL = `${BASE_URL}/create-issue`; 
 const GET_ISSUES_URL = `${BASE_URL}/get-issues`; 
+const ENHANCE_URL = `${BASE_URL}/enhance-description`; // New API for AI text polishing
 
 const COLORS = {
   primary: '#8e44ad',
@@ -33,17 +34,30 @@ const COLORS = {
   error: '#c0392b'
 };
 
-const CATEGORIES = ['Pothole', 'Street Light', 'Garbage', 'Water Leak', 'Other'];
+// Expanded Categories List
+const CATEGORIES = [
+  'Pothole', 
+  'Street Light', 
+  'Garbage', 
+  'Water Leak', 
+  'Drainage/Sewage',
+  'Fallen Tree',
+  'Stray Animals',
+  'Other'
+];
 
 export default function ReportIssueScreen({ navigation }) {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState(null);
   const [image, setImage] = useState(null);
   const [locationData, setLocationData] = useState(null); 
+  
+  // Loading States
   const [loadingLoc, setLoadingLoc] = useState(false);
   const [submitting, setSubmitting] = useState(false); 
+  const [enhancing, setEnhancing] = useState(false);
 
-  // 1. Take Photo
+  // --- 1. TAKE EVIDENCE PHOTO ---
   const takePhoto = async () => {
     const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
     
@@ -63,7 +77,7 @@ export default function ReportIssueScreen({ navigation }) {
     }
   };
 
-  // 2. Get Location
+  // --- 2. GET LIVE LOCATION ---
   const getLocation = async () => {
     setLoadingLoc(true);
     let { status } = await Location.requestForegroundPermissionsAsync();
@@ -103,9 +117,31 @@ export default function ReportIssueScreen({ navigation }) {
     }
   };
 
-  // 3. Submit to Database
+  // --- 3. ENHANCE DESCRIPTION WITH AI ---
+  const handleEnhance = async () => {
+    if (description.trim().length < 5) {
+      Alert.alert("Too Short", "Please type a few more words first so the AI has something to work with!");
+      return;
+    }
+
+    setEnhancing(true);
+    try {
+      const response = await axios.post(ENHANCE_URL, { text: description });
+      if (response.data.status === "ok") {
+        setDescription(response.data.data); // Overwrite the text box with the AI version!
+      } else {
+        Alert.alert("AI Error", response.data.data);
+      }
+    } catch (error) {
+      Alert.alert("Network Error", "Could not reach the AI server.");
+    } finally {
+      setEnhancing(false);
+    }
+  };
+
+  // --- 4. SUBMIT TO DATABASE ---
   const handleSubmit = async () => {
-    // --- VALIDATION ---
+    // Validation
     if (!image) return Alert.alert("Missing Photo", "Please take a photo of the issue.");
     if (!locationData) return Alert.alert("Missing Location", "Please click 'Get My Live Location'.");
     if (!category) return Alert.alert("Missing Category", "Please select an issue category.");
@@ -114,7 +150,7 @@ export default function ReportIssueScreen({ navigation }) {
     setSubmitting(true);
 
     try {
-        // --- FETCH REAL USER ID ---
+        // Fetch User ID
         const storedUser = await AsyncStorage.getItem('user_data');
         if (!storedUser) {
             Alert.alert("Error", "You must be logged in to report an issue.");
@@ -125,13 +161,12 @@ export default function ReportIssueScreen({ navigation }) {
         const user = JSON.parse(storedUser);
         const actualUserId = user._id; 
 
-        // --- DUPLICATE CHECK ---
+        // Duplicate Check
         try {
             const checkRes = await axios.get(GET_ISSUES_URL);
             if (checkRes.data.status === "ok") {
                 const existingIssues = checkRes.data.data;
                 
-                // We only check for duplicates if the category is NOT "Other"
                 const isDuplicate = existingIssues.some(
                     issue => category !== 'Other' && 
                              issue.category === category && 
@@ -143,27 +178,23 @@ export default function ReportIssueScreen({ navigation }) {
                     Alert.alert(
                         "Already Reported", 
                         "An active issue for this category at this exact location has already been reported by a citizen.",
-                        [{ 
-                            text: "OK", 
-                            onPress: () => navigation.goBack() // Returns to Home instantly
-                        }]
+                        [{ text: "OK", onPress: () => navigation.goBack() }]
                     );
                     setSubmitting(false);
-                    return; // Stop the submission here
+                    return; 
                 }
             }
         } catch (checkError) {
             console.log("Duplicate check failed, proceeding with submission...", checkError);
         }
-        // -----------------------------
 
-        // A. Convert Image to Base64 String
+        // Convert Image to Base64 String
         const base64Img = await FileSystem.readAsStringAsync(image, {
             encoding: 'base64', 
         });
         const formattedImage = `data:image/jpeg;base64,${base64Img}`;
 
-        // B. Prepare Data Payload
+        // Prepare Data Payload
         const issueData = {
             category: category,
             description: description,
@@ -176,7 +207,7 @@ export default function ReportIssueScreen({ navigation }) {
             user_id: actualUserId, 
         };
 
-        // C. Send to Backend
+        // Send to Backend (Backend will now ping Gemini for priority too!)
         const response = await axios.post(API_URL, issueData);
 
         if (response.data.status === "ok") {
@@ -197,7 +228,7 @@ export default function ReportIssueScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         
         {/* Header */}
         <View style={styles.header}>
@@ -271,13 +302,31 @@ export default function ReportIssueScreen({ navigation }) {
         <Text style={styles.label}>4. Description *</Text>
         <TextInput
           style={styles.input}
-          placeholder="Describe the issue..."
+          placeholder="Describe the issue... (e.g., huge pothole on main road)"
           placeholderTextColor={COLORS.placeholder}
           multiline
-          numberOfLines={3}
+          numberOfLines={4}
           value={description}
           onChangeText={setDescription}
         />
+        
+        {/* ✨ AI Enhance Button ✨ */}
+        {description.trim().length > 0 && (
+          <TouchableOpacity 
+            style={styles.aiButton} 
+            onPress={handleEnhance} 
+            disabled={enhancing}
+          >
+            {enhancing ? (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            ) : (
+              <>
+                <Ionicons name="color-wand" size={16} color={COLORS.primary} />
+                <Text style={styles.aiButtonText}>Enhance with AI</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
 
         {/* Submit Button */}
         <TouchableOpacity 
@@ -286,7 +335,10 @@ export default function ReportIssueScreen({ navigation }) {
           disabled={submitting}
         >
           {submitting ? (
-             <ActivityIndicator color="#fff" />
+             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+               <ActivityIndicator color="#fff" style={{ marginRight: 10 }} />
+               <Text style={styles.submitButtonText}>Analyzing & Submitting...</Text>
+             </View>
           ) : (
              <Text style={styles.submitButtonText}>Submit Report</Text>
           )}
@@ -369,6 +421,27 @@ const styles = StyleSheet.create({
     fontSize: 16
   },
 
+  // AI Button
+  aiButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end', 
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: '#f3e5f5', 
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e1bee7',
+    elevation: 1,
+  },
+  aiButtonText: {
+    color: COLORS.primary,
+    fontWeight: 'bold',
+    fontSize: 12,
+    marginLeft: 6
+  },
+
   // Submit
   submitButton: {
     marginTop: 40,
@@ -376,6 +449,7 @@ const styles = StyleSheet.create({
     padding: 18,
     borderRadius: 15,
     alignItems: 'center',
+    justifyContent: 'center',
     elevation: 5,
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },

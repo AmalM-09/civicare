@@ -13,11 +13,17 @@ const IssueSchema = new mongoose.Schema(
     status: { type: String, default: "Pending" }, 
     date: { type: Date, default: Date.now },      
     
+    priority: { type: String, default: "Low" },
    
     user_id: {
       type: String, 
       required: true,
     },
+    assigned_worker_name: { type: String, default: null },
+    assigned_worker_id: { type: String, default: null },
+
+    completed_image: { type: String, default: null },
+    resolved_date: { type: Date, default: null },
   },
   {
     collection: "Issues", 

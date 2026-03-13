@@ -7,7 +7,8 @@ import {
   StyleSheet, 
   StatusBar,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,19 +19,16 @@ import axios from 'axios';
 // --- IMPORT YOUR BASE URL ---
 import { BASE_URL } from '../../config'; 
 
-// --- THEME COLORS ---
 const COLORS = {
   primary: '#8e44ad',
-  background: '#f8f4fc',
-  cardBg: '#ffffff',
-  textDark: '#4a235a',
-  textLight: '#7f8c8d',
-  successBg: '#e8f5e9',
-  successText: '#27ae60',
-  warningBg: '#fff3e0',
-  warningText: '#f39c12',
-  dangerBg: '#fce4ec',
-  dangerText: '#c0392b'
+  background: '#ffffff', // Pure white background
+  textDark: '#333333',
+  textLight: '#888888',
+  success: '#27ae60',
+  warning: '#f39c12',
+  danger: '#e74c3c',
+  border: '#eeeeee',
+  lightPurple: '#f9f4fd'
 };
 
 export default function HistoryScreen({ navigation }) {
@@ -65,7 +63,6 @@ export default function HistoryScreen({ navigation }) {
     }
   };
 
-  // Reload data every time the screen comes into focus
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
@@ -78,6 +75,34 @@ export default function HistoryScreen({ navigation }) {
     fetchHistory();
   };
 
+  // --- CANCEL LOGIC ---
+  const handleCancelIssue = (issueId) => {
+    Alert.alert(
+      "Cancel Report",
+      "Are you sure you want to withdraw this report? This action cannot be undone.",
+      [
+        { text: "Keep It", style: "cancel" },
+        { 
+          text: "Yes, Cancel", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const response = await axios.post(`${BASE_URL}/delete-issue`, { issue_id: issueId });
+              
+              if (response.data.status === "ok") {
+                setIssues((prevIssues) => prevIssues.filter(issue => issue._id !== issueId));
+              } else {
+                Alert.alert("Cannot Cancel", response.data.data);
+              }
+            } catch (error) {
+              Alert.alert("Network Error", "Could not reach the server to cancel.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
   // --- HELPERS ---
   const formatDate = (isoDate) => {
     if (!isoDate) return "Unknown Date";
@@ -86,81 +111,90 @@ export default function HistoryScreen({ navigation }) {
   };
 
   const getStatusColor = (status) => {
-    switch (status) {
-      case 'Solved': return COLORS.successBg;    
-      case 'Processing': return COLORS.warningBg; 
-      default: return COLORS.dangerBg;          
-    }
+    if (status === 'Solved') return COLORS.success;
+    if (status === 'Processing') return COLORS.warning;
+    return COLORS.danger; 
   };
 
-  const getStatusTextColor = (status) => {
-    switch (status) {
-      case 'Solved': return COLORS.successText;    
-      case 'Processing': return COLORS.warningText; 
-      default: return COLORS.dangerText;          
-    }
+  const getCategoryIcon = (category) => {
+    const cat = category?.toLowerCase() || '';
+    if (cat.includes('light') || cat.includes('electrical')) return 'bulb';
+    if (cat.includes('water') || cat.includes('pipe') || cat.includes('drain')) return 'water';
+    if (cat.includes('garbage') || cat.includes('trash')) return 'trash';
+    if (cat.includes('road') || cat.includes('pothole')) return 'car';
+    return 'alert-circle';
   };
 
-  // --- RENDER EACH CARD ---
-  const renderItem = ({ item }) => (
-    <TouchableOpacity 
-      style={styles.card} 
-      activeOpacity={0.7}
-      // Passes the clicked issue to your Detail page!
-      onPress={() => navigation.navigate('IssueDetail', { issue: item })} 
-    >
-      <View style={styles.cardHeader}>
-        <View style={styles.iconContainer}>
-           <Ionicons 
-             name={item.category.includes('Light') ? 'bulb' : item.category.includes('Water') ? 'water' : 'alert-circle'} 
-             size={24} 
-             color={COLORS.primary} 
-           />
+  // --- CLEAN ROW ITEM ---
+  const renderItem = ({ item }) => {
+    const statusColor = getStatusColor(item.status);
+
+    return (
+      <TouchableOpacity 
+        style={styles.listItem} 
+        activeOpacity={0.6}
+        onPress={() => navigation.navigate('IssueDetail', { issue: item })} 
+      >
+        {/* Left Icon */}
+        <View style={styles.iconBox}>
+           <Ionicons name={getCategoryIcon(item.category)} size={22} color={COLORS.primary} />
         </View>
-        <View style={{ flex: 1, marginLeft: 12 }}>
-           <Text style={styles.cardTitle}>{item.category}</Text>
-           <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
+
+        {/* Center Text Info */}
+        <View style={styles.itemInfo}>
+           <Text style={styles.itemTitle}>{item.category}</Text>
+           <Text style={styles.itemLocation} numberOfLines={1}>{item.locationName || "Unknown Location"}</Text>
+           <View style={styles.dateRow}>
+             <Ionicons name="calendar-outline" size={12} color={COLORS.textLight} />
+             <Text style={styles.itemDate}>{formatDate(item.date)}</Text>
+           </View>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-           <Text style={[styles.statusText, { color: getStatusTextColor(item.status) }]}>{item.status}</Text>
+
+        {/* Right Status & Actions */}
+        <View style={styles.itemActions}>
+           <View style={[styles.statusBadge, { backgroundColor: statusColor + '15' }]}>
+              <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+              <Text style={[styles.statusText, { color: statusColor }]}>{item.status}</Text>
+           </View>
+
+           {item.status === 'Pending' && (
+             <TouchableOpacity 
+               style={styles.cancelBtn} 
+               onPress={() => handleCancelIssue(item._id)}
+               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} // Makes it easier to tap
+             >
+               <Ionicons name="trash-outline" size={16} color={COLORS.textLight} />
+               <Text style={styles.cancelText}>Cancel</Text>
+             </TouchableOpacity>
+           )}
         </View>
-      </View>
-      
-      <View style={styles.divider} />
-      
-      <View style={styles.locationRow}>
-        <Ionicons name="location-sharp" size={16} color={COLORS.textLight} />
-        <Text style={styles.locationText} numberOfLines={1}>
-          {item.locationName || "Location not available"}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
       
-      {/* Header */}
+      {/* Clean Flat Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={COLORS.textDark} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Submission History</Text>
+        <Text style={styles.headerTitle}>My Reports</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      {/* Loading State or List */}
+      {/* List Area */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={{ marginTop: 10, color: COLORS.textLight }}>Loading your history...</Text>
         </View>
       ) : (
         <FlatList
           data={issues}
           renderItem={renderItem}
-          keyExtractor={item => item._id} // Uses MongoDB ID
+          keyExtractor={item => item._id} 
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -168,8 +202,8 @@ export default function HistoryScreen({ navigation }) {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="file-tray-outline" size={60} color={COLORS.textLight} />
-              <Text style={styles.emptyText}>You haven't submitted any reports yet.</Text>
+              <Ionicons name="folder-open-outline" size={50} color={COLORS.border} />
+              <Text style={styles.emptyText}>No reports found.</Text>
             </View>
           }
         />
@@ -186,40 +220,58 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: COLORS.background, 
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.textDark },
-  backBtn: { padding: 5 },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.textDark },
+  backBtn: { padding: 5, marginLeft: -5 },
 
-  listContent: { padding: 20, paddingTop: 0 },
+  listContent: { paddingBottom: 30 },
 
-  card: {
-    backgroundColor: COLORS.cardBg,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 15,
-    elevation: 2,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4,
-    borderWidth: 1, borderColor: '#f0f0f0'
+  // Flat Row Styling
+  listItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
-  cardHeader: { flexDirection: 'row', alignItems: 'center' },
-  iconContainer: {
-    width: 45, height: 45, borderRadius: 12,
-    backgroundColor: '#f3e5f5',
-    justifyContent: 'center', alignItems: 'center'
+  iconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: COLORS.lightPurple,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
   },
-  cardTitle: { fontSize: 16, fontWeight: 'bold', color: COLORS.textDark },
-  cardDate: { fontSize: 12, color: COLORS.textLight, marginTop: 2 },
   
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  statusText: { fontSize: 11, fontWeight: 'bold' },
-
-  divider: { height: 1, backgroundColor: '#f0f0f0', marginVertical: 12 },
+  itemInfo: { flex: 1, justifyContent: 'center' },
+  itemTitle: { fontSize: 16, fontWeight: 'bold', color: COLORS.textDark, marginBottom: 2 },
+  itemLocation: { fontSize: 13, color: COLORS.textLight, marginBottom: 6 },
   
-  locationRow: { flexDirection: 'row', alignItems: 'center' },
-  locationText: { fontSize: 13, color: COLORS.textLight, marginLeft: 6, flex: 1 },
+  dateRow: { flexDirection: 'row', alignItems: 'center' },
+  itemDate: { fontSize: 12, color: COLORS.textLight, marginLeft: 4, fontWeight: '500' },
+
+  itemActions: { alignItems: 'flex-end', justifyContent: 'center', marginLeft: 10 },
+  
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
+  statusText: { fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase' },
+
+  cancelBtn: { flexDirection: 'row', alignItems: 'center' },
+  cancelText: { fontSize: 12, color: COLORS.textLight, marginLeft: 4, fontWeight: '500' },
 
   emptyContainer: { alignItems: 'center', marginTop: 100 },
-  emptyText: { color: COLORS.textLight, fontSize: 16, marginTop: 10 }
+  emptyText: { color: COLORS.textLight, fontSize: 15, marginTop: 12 }
 });
